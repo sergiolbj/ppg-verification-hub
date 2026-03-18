@@ -8,17 +8,6 @@ import os
 from PIL import Image
 from st_supabase_connection import SupabaseConnection
 
-# TESTE DE DEBUG - REMOVA DEPOIS
-if "connections" in st.secrets:
-    st.success("✅ Bloco [connections] encontrado!")
-    if "supabase" in st.secrets["connections"]:
-        st.success("✅ Bloco [supabase] encontrado!")
-    else:
-        st.error("❌ Bloco [supabase] NÃO encontrado dentro de [connections]")
-else:
-    st.error("❌ Bloco [connections] NÃO encontrado nos Secrets")
-
-
 # --- 1. CONFIGURAÇÕES DE INTERFACE ---
 st.set_page_config(
     page_title="Verification Hub | Propeg", 
@@ -43,12 +32,22 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CONEXÃO SUPABASE COM TRATAMENTO DE ERRO ---
+# --- 2. CONEXÃO SUPABASE (FORÇADA MANUAL) ---
 try:
-    conn = st.connection("supabase", type=SupabaseConnection)
+    # Busca manual confirmada pelo seu teste de debug
+    S_URL = st.secrets["connections"]["supabase"]["url"]
+    S_KEY = st.secrets["connections"]["supabase"]["key"]
+    
+    # Inicia a conexão passando as credenciais explicitamente
+    conn = st.connection(
+        "supabase", 
+        type=SupabaseConnection, 
+        url=S_URL, 
+        key=S_KEY
+    )
 except Exception as e:
-    st.error("🚨 **Erro de Configuração:** Não foi possível encontrar as credenciais do Supabase nos Secrets do Streamlit.")
-    st.info("Vá em Settings > Secrets e adicione a [connections.supabase] com 'url' e 'key'.")
+    st.error(f"🚨 Erro de Conexão: {e}")
+    st.info("Verifique os Secrets no Streamlit Cloud.")
     st.stop()
 
 def carregar_modulos():
@@ -103,7 +102,7 @@ with st.sidebar:
         st.image(Image.open("propeg_logo.jpg"), width='stretch')
     st.title("Verification Hub")
     st.markdown("---")
-    menu = st.radio("Navegação", ["🚀 Executar Módulo", "✨ Criar Novo Módulo", "⚙️ Gerenciar"], 
+    menu = st.radio("Menu", ["🚀 Executar Módulo", "✨ Criar Novo Módulo", "⚙️ Gerenciar"], 
                     index=["🚀 Executar Módulo", "✨ Criar Novo Módulo", "⚙️ Gerenciar"].index(st.session_state.pagina))
     if menu != st.session_state.pagina:
         st.session_state.pagina = menu
@@ -127,8 +126,7 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
             n_total = st.text_input("Nome Coluna Total", value=config_alvo.get('nome_total', 'Impressões entregues'))
             cats = st.text_area("Categorias (uma por linha)", value="\n".join(config_alvo.get('categorias_alvo', ["Conteúdo Sensível"])))
         st.divider()
-        st.subheader("🛡️ Brand Safety")
-        u_bs = st.checkbox("Ativar por padrão", value=config_alvo.get('usar_bs', False))
+        u_bs = st.checkbox("BS por padrão", value=config_alvo.get('usar_bs', False))
         c_url = st.text_input("Coluna URL", value=config_alvo.get('col_url', 'Página URL'))
         t_bs = st.text_area("Dicionário de Termos", value=config_alvo.get('termos_bs', ''))
         
@@ -143,7 +141,7 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
 # --- PÁGINA: GERENCIAR ---
 elif st.session_state.pagina == "⚙️ Gerenciar":
     st.title("⚙️ Gerenciar Adservers")
-    if not modulos: st.info("Nenhum módulo cadastrado no Supabase.")
+    if not modulos: st.info("Nenhum módulo cadastrado.")
     for m_nome, m_cfg in modulos.items():
         st.markdown(f'<div class="manage-card"><strong>📦 {m_nome}</strong></div>', unsafe_allow_html=True)
         c_inf, c_ed, c_del = st.columns([6, 1, 1])
@@ -179,7 +177,7 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                 if p_btn.button("🛑 Interromper"): st.session_state.interromper = True
                 
                 res_resumo, det_bs_lista = [], []
-                with st.status(f"🛠️ Processando (0/{total})...", expanded=True) as status:
+                with st.status(f"🛠️ Processando em Lote (0/{total})...", expanded=True) as status:
                     pbar = st.progress(0)
                     for i, arq in enumerate(files):
                         if st.session_state.interromper: break
@@ -234,7 +232,7 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                 with col1:
                     b1 = io.BytesIO()
                     df_final.to_excel(b1, index=False)
-                    st.download_button("🟢 Resumo Excel", b1.getvalue(), f"resumo_{escolha}.xlsx")
+                    st.download_button("🟢 Resumo Excel", b1.getvalue(), f"resumo.xlsx")
                 if det_bs_lista:
                     df_det_f = pd.concat(det_bs_lista, ignore_index=True)
                     with col2:
