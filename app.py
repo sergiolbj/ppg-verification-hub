@@ -19,11 +19,8 @@ st.set_page_config(
 # Estilização Tema Light com Identidade Propeg
 st.markdown("""
     <style>
-    /* Fundo Claro e Texto Escuro */
     .stApp { background-color: #f8f9fa; color: #212529; }
     [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #dee2e6; }
-    
-    /* Cards de Gerenciamento Estilizados */
     .manage-card { 
         background-color: #ffffff; 
         border-left: 5px solid #e30613; 
@@ -33,14 +30,8 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         color: #212529;
     }
-    
-    /* Barra de Progresso Vermelha Propeg */
     .stProgress > div > div > div > div { background-color: #e30613; }
-    
-    /* Botões */
     .stButton>button { border-radius: 5px; font-weight: bold; }
-    
-    /* Ajuste de contraste para inputs no tema light */
     input { background-color: #ffffff !important; color: #212529 !important; border: 1px solid #ced4da !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -232,11 +223,16 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                     st.dataframe(df_final.style.format({"% do Total": "{:.2f}%"}), width='stretch')
                     
                     c1, c2 = st.columns(2)
+                    
+                    # --- CORREÇÃO DO ERRO NAMEERROR ---
                     b1 = io.BytesIO()
                     df_final.to_excel(b1, index=False)
                     c1.download_button("🟢 Baixar Resumo Excel", b1.getvalue(), f"resumo_{escolha}.xlsx")
+                    
+                    # Só tenta gerar o b2 se a lista de detalhes não estiver vazia
                     if det_bs_lista:
                         df_det_f = pd.concat(det_bs_lista, ignore_index=True)
                         b2 = io.BytesIO()
                         df_det_f.to_excel(b2, index=False)
-                        cd2.download_button("🔴 Baixar Detalhes Brand Safety", b2.getvalue(), "detalhes_bs.xlsx")
+                        c2.download_button("🔴 Baixar Detalhes Brand Safety", b2.getvalue(), "detalhes_bs.xlsx")
+                    # -----------------------------------
