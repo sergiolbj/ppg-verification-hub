@@ -32,46 +32,33 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CONEXÃO SUPABASE (FORÇADA MANUAL) ---
+# --- 2. CONEXÃO SUPABASE ---
 try:
-    # Busca manual confirmada pelo seu teste de debug
     S_URL = st.secrets["connections"]["supabase"]["url"]
     S_KEY = st.secrets["connections"]["supabase"]["key"]
-    
-    # Inicia a conexão passando as credenciais explicitamente
-    conn = st.connection(
-        "supabase", 
-        type=SupabaseConnection, 
-        url=S_URL, 
-        key=S_KEY
-    )
+    conn = st.connection("supabase", type=SupabaseConnection, url=S_URL, key=S_KEY)
 except Exception as e:
     st.error(f"🚨 Erro de Conexão: {e}")
-    st.info("Verifique os Secrets no Streamlit Cloud.")
     st.stop()
 
 def carregar_modulos():
     try:
         response = conn.table("modulos_verification").select("*").execute()
         return {item['nome']: item['config'] for item in response.data} if response.data else {}
-    except:
-        return {}
+    except: return {}
 
 def salvar_modulo(nome, config):
     try:
         data = {"nome": nome, "config": config}
         conn.table("modulos_verification").upsert(data, on_conflict="nome").execute()
         return True
-    except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
-        return False
+    except: return False
 
 def excluir_modulo(nome):
     try:
         conn.table("modulos_verification").delete().eq("nome", nome).execute()
         return True
-    except:
-        return False
+    except: return False
 
 # --- 3. MOTOR DE PROCESSAMENTO ---
 def analisar_brand_safety(df, col_url, termos):
@@ -126,9 +113,24 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
             n_total = st.text_input("Nome Coluna Total", value=config_alvo.get('nome_total', 'Impressões entregues'))
             cats = st.text_area("Categorias (uma por linha)", value="\n".join(config_alvo.get('categorias_alvo', ["Conteúdo Sensível"])))
         st.divider()
-        u_bs = st.checkbox("BS por padrão", value=config_alvo.get('usar_bs', False))
+        st.subheader("🛡️ Brand Safety")
+        # Ajuste solicitado: BS por padrão -> Usar Brand Safety por padrão
+        u_bs = st.checkbox("Usar Brand Safety por padrão", value=config_alvo.get('usar_bs', False))
         c_url = st.text_input("Coluna URL", value=config_alvo.get('col_url', 'Página URL'))
-        t_bs = st.text_area("Dicionário de Termos", value=config_alvo.get('termos_bs', ''))
+        
+        # Reintrodução da opção de subir arquivo de palavras
+        up_termos = st.file_uploader("📥 Subir lista de termos (XLSX ou CSV)", type=["xlsx", "csv"])
+        termos_atuais = config_alvo.get('termos_bs', '')
+        
+        if up_termos:
+            try:
+                df_t = pd.read_csv(up_termos) if up_termos.name.endswith('.csv') else pd.read_excel(up_termos)
+                termos_atuais = ", ".join(df_t.iloc[:, 0].dropna().astype(str).tolist())
+                st.info(f"✅ {len(termos_atuais.split(','))} termos carregados do arquivo.")
+            except:
+                st.error("Erro ao ler o arquivo de termos.")
+
+        t_bs = st.text_area("Dicionário de Termos (separados por vírgula)", value=termos_atuais)
         
         if st.form_submit_button("💾 Salvar no Supabase"):
             if nome:
@@ -175,7 +177,6 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
             
             elif st.session_state.processando:
                 if p_btn.button("🛑 Interromper"): st.session_state.interromper = True
-                
                 res_resumo, det_bs_lista = [], []
                 with st.status(f"🛠️ Processando em Lote (0/{total})...", expanded=True) as status:
                     pbar = st.progress(0)
@@ -212,7 +213,6 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                             del df; gc.collect()
                         except Exception as e: st.error(f"Erro em {arq.name}: {e}")
                     status.update(label="✅ Concluído!", state="complete", expanded=False)
-                
                 st.session_state.processando, st.session_state.concluido = False, True
                 st.session_state.cache = (res_resumo, det_bs_lista)
                 st.rerun()
@@ -232,7 +232,7 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                 with col1:
                     b1 = io.BytesIO()
                     df_final.to_excel(b1, index=False)
-                    st.download_button("🟢 Resumo Excel", b1.getvalue(), f"resumo.xlsx")
+                    st.download_button("🟢 Resumo Excel", b1.getvalue(), "resumo.xlsx")
                 if det_bs_lista:
                     df_det_f = pd.concat(det_bs_lista, ignore_index=True)
                     with col2:
