@@ -1,6 +1,6 @@
-streamlit>=1.30.0
-st-supabase-connection==0.0.3
-supabase==2.3.1
+streamlit
 pandas
-Pillow
+xlsxwriter
 openpyxl
+Pillow
+st-supabase-connection
