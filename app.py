@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização Light com Identidade Propeg
+# Estilização Light Propeg
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; color: #212529; }
@@ -32,13 +32,18 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CONEXÃO SUPABASE ---
-conn = st.connection("supabase", type=SupabaseConnection)
+# --- 2. CONEXÃO SUPABASE COM TRATAMENTO DE ERRO ---
+try:
+    conn = st.connection("supabase", type=SupabaseConnection)
+except Exception as e:
+    st.error("🚨 **Erro de Configuração:** Não foi possível encontrar as credenciais do Supabase nos Secrets do Streamlit.")
+    st.info("Vá em Settings > Secrets e adicione a [connections.supabase] com 'url' e 'key'.")
+    st.stop()
 
 def carregar_modulos():
     try:
         response = conn.table("modulos_verification").select("*").execute()
-        return {item['nome']: item['config'] for item in response.data}
+        return {item['nome']: item['config'] for item in response.data} if response.data else {}
     except:
         return {}
 
@@ -48,7 +53,7 @@ def salvar_modulo(nome, config):
         conn.table("modulos_verification").upsert(data, on_conflict="nome").execute()
         return True
     except Exception as e:
-        st.error(f"Erro ao salvar no Supabase: {e}")
+        st.error(f"Erro ao salvar: {e}")
         return False
 
 def excluir_modulo(nome):
@@ -74,7 +79,7 @@ def analisar_brand_safety(df, col_url, termos):
         df_detalhe.rename(columns={col_url: 'URL Analisada'}, inplace=True)
     return df, df_detalhe
 
-# --- 4. FLUXO E NAVEGAÇÃO ---
+# --- 4. ESTADOS E NAVEGAÇÃO ---
 modulos = carregar_modulos()
 if 'pagina' not in st.session_state: st.session_state.pagina = "🚀 Executar Módulo"
 if 'modulo_para_editar' not in st.session_state: st.session_state.modulo_para_editar = None
@@ -103,17 +108,18 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
         nome = st.text_input("Nome do Adserver", value=nome_ed if nome_ed else "")
         c1, c2 = st.columns(2)
         with c1:
-            h_idx = st.number_input("Linha do Header", value=config_alvo.get('header_index', 4) + 1, min_value=1) - 1
+            h_idx = st.number_input("Linha do Header (Excel)", value=config_alvo.get('header_index', 4) + 1, min_value=1) - 1
             c_imp = st.text_input("Coluna Impressões", value=config_alvo.get('col_impressoes', 'Impressões'))
             c_veic = st.text_input("Coluna Veículo", value=config_alvo.get('col_veiculo', 'Veículo'))
         with c2:
             c_cat = st.text_input("Coluna Categoria", value=config_alvo.get('col_categoria', 'Categoria'))
             n_total = st.text_input("Nome Coluna Total", value=config_alvo.get('nome_total', 'Impressões entregues'))
-            cats = st.text_area("Categorias", value="\n".join(config_alvo.get('categorias_alvo', ["Conteúdo Sensível"])))
+            cats = st.text_area("Categorias (uma por linha)", value="\n".join(config_alvo.get('categorias_alvo', ["Conteúdo Sensível"])))
         st.divider()
-        u_bs = st.checkbox("BS por padrão", value=config_alvo.get('usar_bs', False))
+        st.subheader("🛡️ Brand Safety")
+        u_bs = st.checkbox("Ativar por padrão", value=config_alvo.get('usar_bs', False))
         c_url = st.text_input("Coluna URL", value=config_alvo.get('col_url', 'Página URL'))
-        t_bs = st.text_area("Dicionário", value=config_alvo.get('termos_bs', ''))
+        t_bs = st.text_area("Dicionário de Termos", value=config_alvo.get('termos_bs', ''))
         
         if st.form_submit_button("💾 Salvar no Supabase"):
             if nome:
@@ -126,6 +132,7 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
 # --- PÁGINA: GERENCIAR ---
 elif st.session_state.pagina == "⚙️ Gerenciar":
     st.title("⚙️ Gerenciar Adservers")
+    if not modulos: st.info("Nenhum módulo cadastrado no Supabase.")
     for m_nome, m_cfg in modulos.items():
         st.markdown(f'<div class="manage-card"><strong>📦 {m_nome}</strong></div>', unsafe_allow_html=True)
         c_inf, c_ed, c_del = st.columns([6, 1, 1])
@@ -140,8 +147,8 @@ elif st.session_state.pagina == "⚙️ Gerenciar":
 
 # --- PÁGINA: EXECUTAR ---
 elif st.session_state.pagina == "🚀 Executar Módulo":
-    st.title("🚀 Processamento de Lote Propeg")
-    if not modulos: st.warning("Crie um módulo no menu ao lado.")
+    st.title("🚀 Processamento Propeg")
+    if not modulos: st.warning("Crie um módulo antes de processar.")
     else:
         escolha = st.selectbox("Selecione o Adserver:", list(modulos.keys()))
         conf = modulos[escolha]
@@ -202,7 +209,7 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                 st.rerun()
 
             elif st.session_state.concluido:
-                if p_btn.button("🔄 Novo Lote"):
+                if p_btn.button("🔄 Novo Processo"):
                     st.session_state.concluido = False
                     st.rerun()
                 
@@ -211,11 +218,12 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                 df_final['% do Total'] = (df_final['Soma (categorias)'] / df_final[conf['nome_total']] * 100).fillna(0)
                 st.dataframe(df_final.style.format({"% do Total": "{:.2f}%"}), width='stretch')
                 
+                st.markdown("### 📥 Exportação")
                 col1, col2, _ = st.columns([1.5, 2, 5])
                 with col1:
                     b1 = io.BytesIO()
                     df_final.to_excel(b1, index=False)
-                    st.download_button("🟢 Resumo Excel", b1.getvalue(), "resumo.xlsx")
+                    st.download_button("🟢 Resumo Excel", b1.getvalue(), f"resumo_{escolha}.xlsx")
                 if det_bs_lista:
                     df_det_f = pd.concat(det_bs_lista, ignore_index=True)
                     with col2:
