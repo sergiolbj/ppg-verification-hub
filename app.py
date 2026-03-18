@@ -16,21 +16,32 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Forçar Modo Dark e Estilos Propeg
+# Estilização Tema Light com Identidade Propeg
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; color: #fafafa; }
-    [data-testid="stSidebar"] { background-color: #161b22; }
+    /* Fundo Claro e Texto Escuro */
+    .stApp { background-color: #f8f9fa; color: #212529; }
+    [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #dee2e6; }
+    
+    /* Cards de Gerenciamento Estilizados */
     .manage-card { 
-        background-color: #1c2128; 
+        background-color: #ffffff; 
         border-left: 5px solid #e30613; 
         padding: 20px; 
         border-radius: 8px; 
         margin-bottom: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        color: #212529;
     }
+    
+    /* Barra de Progresso Vermelha Propeg */
     .stProgress > div > div > div > div { background-color: #e30613; }
+    
+    /* Botões */
     .stButton>button { border-radius: 5px; font-weight: bold; }
+    
+    /* Ajuste de contraste para inputs no tema light */
+    input { background-color: #ffffff !important; color: #212529 !important; border: 1px solid #ced4da !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -82,7 +93,7 @@ if 'interromper' not in st.session_state: st.session_state.interromper = False
 # --- SIDEBAR ---
 with st.sidebar:
     if os.path.exists(NOME_ARQUIVO_LOGO):
-        st.image(Image.open(NOME_ARQUIVO_LOGO), width='stretch') # Padrão 2026
+        st.image(Image.open(NOME_ARQUIVO_LOGO), width='stretch')
     st.title("Verification Hub")
     st.markdown("---")
     opcoes_menu = ["🚀 Executar Módulo", "✨ Criar Novo Módulo", "⚙️ Gerenciar"]
@@ -164,14 +175,14 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
             st.warning("⚠️ O processamento de múltiplos arquivos pode demorar. Não feche a aba.")
             p_btn = st.empty()
             if not st.session_state.processando:
-                if p_btn.button("📊 Iniciar Consolidação"):
+                if p_btn.button("📊 Iniciar Consolidação Segura"):
                     st.session_state.processando, st.session_state.interromper = True, False
                     st.rerun()
             else:
                 if p_btn.button("🛑 Interromper"): st.session_state.interromper = True
                 
                 res_resumo, det_bs_lista = [], []
-                with st.status("🛠️ Processando...", expanded=True) as status:
+                with st.status("🛠️ Processando em Lote...", expanded=True) as status:
                     pbar = st.progress(0)
                     for i, arq in enumerate(files):
                         if st.session_state.interromper: break
@@ -228,4 +239,4 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                         df_det_f = pd.concat(det_bs_lista, ignore_index=True)
                         b2 = io.BytesIO()
                         df_det_f.to_excel(b2, index=False)
-                        c2.download_button("🔴 Baixar Detalhes Brand Safety", b2.getvalue(), "detalhes_bs.xlsx")
+                        cd2.download_button("🔴 Baixar Detalhes Brand Safety", b2.getvalue(), "detalhes_bs.xlsx")
