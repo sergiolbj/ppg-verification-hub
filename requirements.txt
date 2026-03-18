@@ -3,3 +3,4 @@ pandas
 xlsxwriter
 openpyxl
 Pillow
+st-supabase-connection
