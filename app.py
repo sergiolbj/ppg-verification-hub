@@ -8,6 +8,17 @@ import os
 from PIL import Image
 from st_supabase_connection import SupabaseConnection
 
+# TESTE DE DEBUG - REMOVA DEPOIS
+if "connections" in st.secrets:
+    st.success("✅ Bloco [connections] encontrado!")
+    if "supabase" in st.secrets["connections"]:
+        st.success("✅ Bloco [supabase] encontrado!")
+    else:
+        st.error("❌ Bloco [supabase] NÃO encontrado dentro de [connections]")
+else:
+    st.error("❌ Bloco [connections] NÃO encontrado nos Secrets")
+
+
 # --- 1. CONFIGURAÇÕES DE INTERFACE ---
 st.set_page_config(
     page_title="Verification Hub | Propeg", 
