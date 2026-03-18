@@ -16,7 +16,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização Tema Light
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; color: #212529; }
@@ -31,6 +30,8 @@ st.markdown("""
     }
     .stProgress > div > div > div > div { background-color: #e30613; }
     .stButton>button { border-radius: 5px; font-weight: bold; }
+    /* Estilo para os botões de download ficarem lado a lado */
+    div.stDownloadButton { display: inline-block; margin-right: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -91,7 +92,7 @@ with st.sidebar:
         st.session_state.modulo_para_editar = None
     st.session_state.pagina = menu
 
-# --- PÁGINA: CRIAR / EDITAR (Resumida para o código completo) ---
+# --- PÁGINAS: CRIAR / GERENCIAR (Omitidas por brevidade, permanecem iguais) ---
 if st.session_state.pagina == "✨ Criar Novo Módulo":
     titulo_txt = f"📝 Editando: {st.session_state.modulo_para_editar}" if st.session_state.modulo_para_editar else "✨ Criar Novo Módulo"
     st.title(titulo_txt)
@@ -123,7 +124,6 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
                 st.session_state.modulo_para_editar = None
                 st.rerun()
 
-# --- PÁGINA: GERENCIAR ---
 elif st.session_state.pagina == "⚙️ Gerenciar":
     st.title("⚙️ Gerenciar Adservers")
     for m_nome, m_cfg in modulos.items():
@@ -153,7 +153,7 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
         
         if files:
             total_arquivos = len(files)
-            st.warning(f"⚠️ **Atenção:** Iniciando processamento de {total_arquivos} arquivos.")
+            st.warning(f"⚠️ **Lote Detectado:** {total_arquivos} arquivos prontos para consolidação.")
             p_btn = st.empty()
             
             if not st.session_state.processando:
@@ -165,21 +165,16 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                 
                 res_resumo, det_bs_lista = [], []
                 
-                # --- MELHORIA DE UX: CONTADOR EXPLÍCITO ---
-                with st.status(f"🛠️ Processando em Lote (0/{total_arquivos})...", expanded=True) as status:
+                with st.status(f"🛠️ Processando (0/{total_arquivos})...", expanded=True) as status:
                     pbar = st.progress(0)
                     stxt = st.empty()
                     
                     for i, arq in enumerate(files):
                         if st.session_state.interromper: break
-                        
                         atual = i + 1
-                        progresso_val = int((atual / total_arquivos) * 100)
-                        
-                        # Atualiza o título do status e o texto interno com contador 3/38
-                        status.update(label=f"🛠️ Processando em Lote ({atual}/{total_arquivos})...")
-                        stxt.markdown(f"📖 **Lendo:** `{arq.name}` ({atual} de {total_arquivos})")
-                        pbar.progress(progresso_val)
+                        status.update(label=f"🛠️ Processando ({atual}/{total_arquivos})...")
+                        stxt.markdown(f"📖 **Lendo:** `{arq.name}`")
+                        pbar.progress(int((atual / total_arquivos) * 100))
                         
                         try:
                             df = pd.read_excel(arq, header=conf['header_index'])
@@ -212,20 +207,28 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                             gc.collect() 
                         except Exception as e:
                             st.error(f"Erro em {arq.name}: {e}")
-                    
                     status.update(label=f"✅ {total_arquivos} arquivos consolidados!", state="complete", expanded=False)
 
                 st.session_state.processando = False
                 if res_resumo and not st.session_state.interromper:
                     df_final = pd.concat(res_resumo, ignore_index=True).groupby('Veiculos').sum(numeric_only=True).reset_index()
                     df_final['% do Total'] = (df_final['Soma (categorias)'] / df_final[conf['nome_total']] * 100).fillna(0)
+                    
+                    st.subheader("✅ Resultado Final")
                     st.dataframe(df_final.style.format({"% do Total": "{:.2f}%"}), width='stretch')
-                    c1, c2 = st.columns(2)
-                    b1 = io.BytesIO()
-                    df_final.to_excel(b1, index=False)
-                    c1.download_button("🟢 Baixar Resumo Excel", b1.getvalue(), f"resumo_{escolha}.xlsx")
+                    
+                    # --- BOTÕES APROXIMADOS ---
+                    st.markdown("### 📥 Área de Exportação")
+                    col_b1, col_b2, col_vazio = st.columns([1.5, 2, 5]) # Colunas estreitas para agrupar botões
+                    
+                    with col_b1:
+                        b1 = io.BytesIO()
+                        df_final.to_excel(b1, index=False)
+                        st.download_button("🟢 Resumo Excel", b1.getvalue(), f"resumo_{escolha}.xlsx")
+                    
                     if det_bs_lista:
                         df_det_f = pd.concat(det_bs_lista, ignore_index=True)
-                        b2 = io.BytesIO()
-                        df_det_f.to_excel(b2, index=False)
-                        c2.download_button("🔴 Baixar Detalhes Brand Safety", b2.getvalue(), "detalhes_bs.xlsx")
+                        with col_b2:
+                            b2 = io.BytesIO()
+                            df_det_f.to_excel(b2, index=False)
+                            st.download_button(f"🔴 Brand Safety ({len(df_det_f)} matches)", b2.getvalue(), "detalhes_bs.xlsx")
