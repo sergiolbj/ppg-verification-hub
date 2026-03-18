@@ -5,6 +5,7 @@ import re
 import io
 import gc
 import os
+from datetime import datetime # Importação necessária para o timestamp
 from PIL import Image
 from st_supabase_connection import SupabaseConnection
 
@@ -114,11 +115,9 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
             cats = st.text_area("Categorias (uma por linha)", value="\n".join(config_alvo.get('categorias_alvo', ["Conteúdo Sensível"])))
         st.divider()
         st.subheader("🛡️ Brand Safety")
-        # Ajuste solicitado: BS por padrão -> Usar Brand Safety por padrão
         u_bs = st.checkbox("Usar Brand Safety por padrão", value=config_alvo.get('usar_bs', False))
         c_url = st.text_input("Coluna URL", value=config_alvo.get('col_url', 'Página URL'))
         
-        # Reintrodução da opção de subir arquivo de palavras
         up_termos = st.file_uploader("📥 Subir lista de termos (XLSX ou CSV)", type=["xlsx", "csv"])
         termos_atuais = config_alvo.get('termos_bs', '')
         
@@ -126,7 +125,7 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
             try:
                 df_t = pd.read_csv(up_termos) if up_termos.name.endswith('.csv') else pd.read_excel(up_termos)
                 termos_atuais = ", ".join(df_t.iloc[:, 0].dropna().astype(str).tolist())
-                st.info(f"✅ {len(termos_atuais.split(','))} termos carregados do arquivo.")
+                st.info(f"✅ Termos carregados do arquivo.")
             except:
                 st.error("Erro ao ler o arquivo de termos.")
 
@@ -143,7 +142,6 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
 # --- PÁGINA: GERENCIAR ---
 elif st.session_state.pagina == "⚙️ Gerenciar":
     st.title("⚙️ Gerenciar Adservers")
-    if not modulos: st.info("Nenhum módulo cadastrado.")
     for m_nome, m_cfg in modulos.items():
         st.markdown(f'<div class="manage-card"><strong>📦 {m_nome}</strong></div>', unsafe_allow_html=True)
         c_inf, c_ed, c_del = st.columns([6, 1, 1])
@@ -227,15 +225,23 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                 df_final['% do Total'] = (df_final['Soma (categorias)'] / df_final[conf['nome_total']] * 100).fillna(0)
                 st.dataframe(df_final.style.format({"% do Total": "{:.2f}%"}), width='stretch')
                 
+                # --- ÁREA DE EXPORTAÇÃO COM TIMESTAMP ---
                 st.markdown("### 📥 Exportação")
+                
+                # Geração do Timestamp atual no formato AAAAMMDD_HHMM
+                ts = datetime.now().strftime("%Y%m%d_%H%M")
+                
                 col1, col2, _ = st.columns([1.5, 2, 5])
                 with col1:
                     b1 = io.BytesIO()
                     df_final.to_excel(b1, index=False)
-                    st.download_button("🟢 Resumo Excel", b1.getvalue(), "resumo.xlsx")
+                    # Nome do arquivo dinâmico
+                    st.download_button("🟢 Resumo Excel", b1.getvalue(), f"Resumo_{escolha}_{ts}.xlsx")
+                    
                 if det_bs_lista:
                     df_det_f = pd.concat(det_bs_lista, ignore_index=True)
                     with col2:
                         b2 = io.BytesIO()
                         df_det_f.to_excel(b2, index=False)
-                        st.download_button(f"🔴 Brand Safety ({len(df_det_f)})", b2.getvalue(), "detalhes_bs.xlsx")
+                        # Nome do arquivo dinâmico para Brand Safety
+                        st.download_button(f"🔴 Brand Safety ({len(df_det_f)})", b2.getvalue(), f"Detalhes_BS_{escolha}_{ts}.xlsx")
