@@ -2,15 +2,22 @@ name: Keep Alive
 
 on:
   schedule:
-    # Roda a cada 3 dias, às 12h UTC (09h em Brasília)
-    - cron: '0 12 */3 * *'
-  workflow_dispatch:   # permite rodar manualmente pelo botão do GitHub
+    - cron: '0 12 */3 * *'   # a cada 3 dias, 12h UTC (09h Brasília)
+  workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Acordar o app Streamlit
+      - name: Manter o Supabase ativo (o que importa)
         run: |
-          echo "Pingando o app..."
-          curl -sSL -o /dev/null -w "%{http_code}\n" https://ppg-verification.streamlit.app/
+          echo "Pingando o Supabase..."
+          curl -sS -o /dev/null -w "Supabase: %{http_code}\n" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/modulos_verification?select=nome&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}"
+
+      - name: Acordar o app Streamlit (best-effort, não derruba o job)
+        run: |
+          echo "Pingando o app Streamlit..."
+          curl -sS -o /dev/null -w "Streamlit: %{http_code}\n" --max-time 30 \
+            https://ppg-verification.streamlit.app/ || true
