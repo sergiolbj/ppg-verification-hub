@@ -46,20 +46,26 @@ def carregar_modulos():
     try:
         response = conn.table("modulos_verification").select("*").execute()
         return {item['nome']: item['config'] for item in response.data} if response.data else {}
-    except: return {}
+    except Exception as e:
+        st.error(f"Erro ao carregar módulos: {e}")
+        return {}
 
 def salvar_modulo(nome, config):
     try:
         data = {"nome": nome, "config": config}
         conn.table("modulos_verification").upsert(data, on_conflict="nome").execute()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"Erro ao salvar módulo: {e}")
+        return False
 
 def excluir_modulo(nome):
     try:
         conn.table("modulos_verification").delete().eq("nome", nome).execute()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"Erro ao excluir módulo: {e}")
+        return False
 
 # --- 3. MOTOR DE PROCESSAMENTO ---
 def analisar_brand_safety(df, col_url, termos):
@@ -67,6 +73,9 @@ def analisar_brand_safety(df, col_url, termos):
         df['URL Sensível'] = 0
         return df, pd.DataFrame()
     lista_termos = [t.strip().lower() for t in re.split(r'[,\n]', termos) if t.strip()]
+    if not lista_termos:
+        df['URL Sensível'] = 0
+        return df, pd.DataFrame()
     regex_pattern = '|'.join([re.escape(t) for t in lista_termos])
     mask = df[col_url].astype(str).str.lower().str.contains(regex_pattern, na=False, regex=True)
     df['URL Sensível'] = 0
@@ -221,8 +230,11 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
                     st.rerun()
                 
                 res_resumo, det_bs_lista = st.session_state.cache
+                if not res_resumo:
+                    st.warning("Nenhum arquivo foi processado com sucesso. Confira os nomes das colunas configurados no módulo.")
+                    st.stop()
                 df_final = pd.concat(res_resumo, ignore_index=True).groupby('Veiculos').sum(numeric_only=True).reset_index()
-                df_final['% do Total'] = (df_final['Soma (categorias)'] / df_final[conf['nome_total']] * 100).fillna(0)
+                df_final['% do Total'] = (df_final['Soma (categorias)'] / df_final[conf['nome_total']] * 100).replace([float('inf'), float('-inf')], 0).fillna(0)
                 st.dataframe(df_final.style.format({"% do Total": "{:.2f}%"}), width='stretch')
                 
                 # --- ÁREA DE EXPORTAÇÃO COM TIMESTAMP ---
