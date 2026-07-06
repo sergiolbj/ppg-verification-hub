@@ -86,6 +86,36 @@ def analisar_brand_safety(df, col_url, termos):
         df_detalhe.rename(columns={col_url: 'URL Analisada'}, inplace=True)
     return df, df_detalhe
 
+def processar_arquivo(arq, conf, usar_bs):
+    """Processa UM arquivo e devolve (df_resumo, df_detalhe_bs_ou_None)."""
+    df = pd.read_excel(arq, header=conf['header_index'])
+    df.columns = df.columns.str.strip()
+    df.rename(columns={conf['col_veiculo']: 'Veiculos', conf['col_impressoes']: 'Impressões'}, inplace=True)
+    df['Impressões'] = pd.to_numeric(df['Impressões'], errors='coerce').fillna(0)
+    df_det = None
+    if usar_bs:
+        df, dbs = analisar_brand_safety(df, conf['col_url'], conf['termos_bs'])
+        if not dbs.empty:
+            dbs['Arquivo'] = arq.name
+            df_det = dbs
+    df_total = df.groupby('Veiculos')['Impressões'].sum().reset_index()
+    df_total.rename(columns={'Impressões': conf['nome_total']}, inplace=True)
+    df_f = df_total.copy()
+    if conf['col_categoria'] in df.columns:
+        df_cat = df[df[conf['col_categoria']].isin(conf['categorias_alvo'])].copy()
+        if not df_cat.empty:
+            df_piv = df_cat.pivot_table(index='Veiculos', columns=conf['col_categoria'], values='Impressões', aggfunc='sum', fill_value=0).reset_index()
+            df_f = pd.merge(df_f, df_piv, on='Veiculos', how='left').fillna(0)
+    if usar_bs:
+        bs_sum = df.groupby('Veiculos')['URL Sensível'].sum().reset_index()
+        df_f = pd.merge(df_f, bs_sum, on='Veiculos', how='left').fillna(0)
+    cats_f = conf['categorias_alvo'] + (['URL Sensível'] if usar_bs else [])
+    for c in cats_f:
+        if c not in df_f.columns:
+            df_f[c] = 0
+    df_f['Soma (categorias)'] = df_f[[c for c in df_f.columns if c in cats_f]].sum(axis=1)
+    return df_f, df_det
+
 # --- 4. ESTADOS E NAVEGAÇÃO ---
 modulos = carregar_modulos()
 if 'pagina' not in st.session_state: st.session_state.pagina = "🚀 Executar Módulo"
@@ -93,6 +123,12 @@ if 'modulo_para_editar' not in st.session_state: st.session_state.modulo_para_ed
 if 'processando' not in st.session_state: st.session_state.processando = False
 if 'interromper' not in st.session_state: st.session_state.interromper = False
 if 'concluido' not in st.session_state: st.session_state.concluido = False
+if 'idx_atual' not in st.session_state: st.session_state.idx_atual = 0
+if 'res_acc' not in st.session_state: st.session_state.res_acc = []
+if 'det_acc' not in st.session_state: st.session_state.det_acc = []
+if 'run_escolha' not in st.session_state: st.session_state.run_escolha = None
+if 'run_conf' not in st.session_state: st.session_state.run_conf = {}
+if 'run_bs' not in st.session_state: st.session_state.run_bs = False
 
 with st.sidebar:
     if os.path.exists("propeg_logo.jpg"):
@@ -151,6 +187,36 @@ if st.session_state.pagina == "✨ Criar Novo Módulo":
 # --- PÁGINA: GERENCIAR ---
 elif st.session_state.pagina == "⚙️ Gerenciar":
     st.title("⚙️ Gerenciar Adservers")
+
+    with st.expander("💾 Backup / Restauração de configurações", expanded=not modulos):
+        st.caption("Baixe um backup de todos os módulos ou restaure a partir de um arquivo JSON. "
+                   "Guarde esse arquivo para não perder as configurações caso a base seja pausada ou recriada. "
+                   "Ao importar, módulos com o mesmo nome são sobrescritos.")
+        cb1, cb2 = st.columns(2)
+        with cb1:
+            ts_bkp = datetime.now().strftime("%Y%m%d_%H%M")
+            st.download_button(
+                "⬇️ Baixar backup (JSON)",
+                data=json.dumps(modulos, ensure_ascii=False, indent=2),
+                file_name=f"modulos_backup_{ts_bkp}.json",
+                mime="application/json",
+                disabled=not modulos,
+            )
+        with cb2:
+            up_cfg = st.file_uploader("⬆️ Restaurar de um JSON", type=["json"], key="import_cfg")
+            if up_cfg is not None and st.button("Importar módulos do arquivo"):
+                try:
+                    dados = json.load(up_cfg)
+                    if not isinstance(dados, dict):
+                        st.error("Formato inválido: o JSON deve ser um objeto {nome: config}.")
+                    else:
+                        ok = sum(1 for n, c in dados.items() if salvar_modulo(n, c))
+                        st.success(f"{ok} de {len(dados)} módulo(s) importado(s).")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao ler o JSON: {e}")
+
+    st.divider()
     for m_nome, m_cfg in modulos.items():
         st.markdown(f'<div class="manage-card"><strong>📦 {m_nome}</strong></div>', unsafe_allow_html=True)
         c_inf, c_ed, c_del = st.columns([6, 1, 1])
@@ -168,67 +234,78 @@ elif st.session_state.pagina == "🚀 Executar Módulo":
     st.title("🚀 Processamento Propeg")
     if not modulos: st.warning("Crie um módulo antes de processar.")
     else:
-        escolha = st.selectbox("Selecione o Adserver:", list(modulos.keys()))
+        escolha = st.selectbox("Selecione o Adserver:", list(modulos.keys()),
+                               disabled=st.session_state.processando)
         conf = modulos[escolha]
-        usar_bs_agora = st.toggle("🔥 Brand Safety Ativo", value=conf.get('usar_bs', False))
-        files = st.file_uploader("📂 Suba os arquivos XLSX", type="xlsx", accept_multiple_files=True)
-        
+        usar_bs_agora = st.toggle("🔥 Brand Safety Ativo", value=conf.get('usar_bs', False),
+                                  disabled=st.session_state.processando)
+        files = st.file_uploader("📂 Suba os arquivos XLSX", type="xlsx", accept_multiple_files=True,
+                                 disabled=st.session_state.processando)
+
         if files:
             total = len(files)
-            p_btn = st.empty()
-            
-            if not st.session_state.processando and not st.session_state.concluido:
-                if p_btn.button("📊 Iniciar Consolidação"):
-                    st.session_state.processando, st.session_state.interromper, st.session_state.concluido = True, False, False
-                    st.rerun()
-            
-            elif st.session_state.processando:
-                if p_btn.button("🛑 Interromper"): st.session_state.interromper = True
-                res_resumo, det_bs_lista = [], []
-                with st.status(f"🛠️ Processando em Lote (0/{total})...", expanded=True) as status:
-                    pbar = st.progress(0)
-                    for i, arq in enumerate(files):
-                        if st.session_state.interromper: break
-                        status.update(label=f"🛠️ Processando ({i+1}/{total})...")
-                        pbar.progress(int(((i+1)/total)*100))
-                        try:
-                            df = pd.read_excel(arq, header=conf['header_index'])
-                            df.columns = df.columns.str.strip()
-                            df.rename(columns={conf['col_veiculo']: 'Veiculos', conf['col_impressoes']: 'Impressões'}, inplace=True)
-                            df['Impressões'] = pd.to_numeric(df['Impressões'], errors='coerce').fillna(0)
-                            if usar_bs_agora:
-                                df, df_det = analisar_brand_safety(df, conf['col_url'], conf['termos_bs'])
-                                if not df_det.empty:
-                                    df_det['Arquivo'] = arq.name
-                                    det_bs_lista.append(df_det)
-                            df_total = df.groupby('Veiculos')['Impressões'].sum().reset_index()
-                            df_total.rename(columns={'Impressões': conf['nome_total']}, inplace=True)
-                            df_f = df_total.copy()
-                            if conf['col_categoria'] in df.columns:
-                                df_cat = df[df[conf['col_categoria']].isin(conf['categorias_alvo'])].copy()
-                                if not df_cat.empty:
-                                    df_piv = df_cat.pivot_table(index='Veiculos', columns=conf['col_categoria'], values='Impressões', aggfunc='sum', fill_value=0).reset_index()
-                                    df_f = pd.merge(df_f, df_piv, on='Veiculos', how='left').fillna(0)
-                            if usar_bs_agora:
-                                bs_sum = df.groupby('Veiculos')['URL Sensível'].sum().reset_index()
-                                df_f = pd.merge(df_f, bs_sum, on='Veiculos', how='left').fillna(0)
-                            cats_f = conf['categorias_alvo'] + (['URL Sensível'] if usar_bs_agora else [])
-                            for c in cats_f:
-                                if c not in df_f.columns: df_f[c] = 0
-                            df_f['Soma (categorias)'] = df_f[[c for c in df_f.columns if c in cats_f]].sum(axis=1)
-                            res_resumo.append(df_f)
-                            del df; gc.collect()
-                        except Exception as e: st.error(f"Erro em {arq.name}: {e}")
-                    status.update(label="✅ Concluído!", state="complete", expanded=False)
-                st.session_state.processando, st.session_state.concluido = False, True
-                st.session_state.cache = (res_resumo, det_bs_lista)
-                st.rerun()
 
+            # --- ESTADO OCIOSO: aguardando início ---
+            if not st.session_state.processando and not st.session_state.concluido:
+                if st.button("📊 Iniciar Consolidação"):
+                    st.session_state.processando = True
+                    st.session_state.interromper = False
+                    st.session_state.concluido = False
+                    st.session_state.idx_atual = 0
+                    st.session_state.res_acc = []
+                    st.session_state.det_acc = []
+                    st.session_state.run_escolha = escolha
+                    st.session_state.run_conf = conf
+                    st.session_state.run_bs = usar_bs_agora
+                    st.rerun()
+
+            # --- ESTADO PROCESSANDO: um arquivo por rerun (permite interromper) ---
+            elif st.session_state.processando:
+                i = st.session_state.idx_atual
+                r_conf = st.session_state.run_conf
+                r_bs = st.session_state.run_bs
+
+                if st.button("🛑 Interromper"):
+                    st.session_state.interromper = True
+                    st.rerun()
+
+                feitos = min(i, total)
+                st.progress(feitos / total if total else 0.0,
+                            text=f"🛠️ Processando ({feitos}/{total})...")
+
+                if st.session_state.interromper:
+                    st.session_state.processando = False
+                    st.session_state.concluido = True
+                    st.session_state.cache = (st.session_state.res_acc, st.session_state.det_acc)
+                    st.warning("⏹️ Processamento interrompido. Mostrando o que já foi consolidado.")
+                    st.rerun()
+                elif i < total:
+                    arq = files[i]
+                    try:
+                        arq.seek(0)
+                        df_f, df_det = processar_arquivo(arq, r_conf, r_bs)
+                        st.session_state.res_acc.append(df_f)
+                        if df_det is not None:
+                            st.session_state.det_acc.append(df_det)
+                    except Exception as e:
+                        st.error(f"Erro em {arq.name}: {e}")
+                    st.session_state.idx_atual = i + 1
+                    gc.collect()
+                    st.rerun()
+                else:
+                    st.session_state.processando = False
+                    st.session_state.concluido = True
+                    st.session_state.cache = (st.session_state.res_acc, st.session_state.det_acc)
+                    st.rerun()
+
+            # --- ESTADO CONCLUÍDO: resultados ---
             elif st.session_state.concluido:
-                if p_btn.button("🔄 Novo Processo"):
+                if st.button("🔄 Novo Processo"):
                     st.session_state.concluido = False
                     st.rerun()
-                
+
+                escolha = st.session_state.run_escolha or escolha
+                conf = st.session_state.run_conf or conf
                 res_resumo, det_bs_lista = st.session_state.cache
                 if not res_resumo:
                     st.warning("Nenhum arquivo foi processado com sucesso. Confira os nomes das colunas configurados no módulo.")
