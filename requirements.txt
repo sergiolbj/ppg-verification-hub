@@ -1,6 +1,6 @@
-streamlit
-pandas
-xlsxwriter
-openpyxl
-Pillow
-st-supabase-connection
+streamlit>=1.49,<2
+pandas>=2.2,<3
+xlsxwriter>=3.2,<4
+openpyxl>=3.1,<4
+Pillow>=10,<13
+st-supabase-connection>=2.0,<3
