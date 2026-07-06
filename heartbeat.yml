@@ -1,0 +1,16 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # Roda a cada 3 dias, às 12h UTC (09h em Brasília)
+    - cron: '0 12 */3 * *'
+  workflow_dispatch:   # permite rodar manualmente pelo botão do GitHub
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Acordar o app Streamlit
+        run: |
+          echo "Pingando o app..."
+          curl -sSL -o /dev/null -w "%{http_code}\n" https://ppg-verification.streamlit.app/
